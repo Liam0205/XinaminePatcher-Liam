@@ -1,0 +1,83 @@
+name: "XinaminePatcher: package, upload and release"
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - ".gitignore"
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - ".gitignore"
+  workflow_dispatch:
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    environment: Automatically Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Procursus
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: dpkg
+
+      - name: Set Environment Variables
+        id: info
+        run: |
+          set -x
+          T2=$(TZ=UTC-2 date +'%Y%m%d_%H%M%S')
+          TS=$(date -j -f "%Y%m%d_%H%M%S" "${T2}" +%s)
+          SHASH=$(git rev-parse --short HEAD)
+          VERSION=$(grep Version: deb/DEBIAN/control | cut -f2 -d ' ')
+          echo "ctime=${T2}" >> $GITHUB_ENV
+          echo "ctimestamp=${TS}" >> $GITHUB_ENV
+          echo "shorthash=${SHASH}" >> $GITHUB_ENV
+          echo "version=${VERSION}" >> $GITHUB_ENV
+
+          LAST_TAG=$(if git show-ref --tags >/dev/null 2>&1; then git describe --tags --abbrev=0; else git rev-list --max-parents=0 HEAD; fi)
+          echo "updated=`if git show-ref --tags >/dev/null 2>&1; then git log --pretty=format:%H --reverse ${LAST_TAG}..HEAD -- deb/DEBIAN/control | head -n 1 | xargs -I {} sh -c 'git show {}:deb/DEBIAN/control | grep -q "Version:" && echo true || echo false'; else echo 'true'; fi`" >> $GITHUB_OUTPUT
+
+          LAST_TAG=$(if git show-ref --tags >/dev/null 2>&1; then git describe --tags --abbrev=0; else git rev-list --max-parents=0 HEAD; fi)
+          echo "Git commit log since last release:" > commit_logs.txt
+          echo "\`\`\`" >> commit_logs.txt
+          git log --graph --pretty=format:'%h - %s <%an>' --abbrev-commit ${LAST_TAG}.. >> commit_logs.txt
+          echo "" >> commit_logs.txt
+          echo "\`\`\`" >> commit_logs.txt
+
+      - name: Package
+        run: |
+          set -x
+          bash package.sh deb
+
+      - name: Upload Latest Artifact
+        id: dopamine-latest-upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: deb
+          path: |
+            ${{ github.workspace }}/*.deb
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: steps.info.outputs.updated == 'true'
+        with:
+          tag_name: ${{ env.version }}
+          name: "XinaminePatcher-Liam: ${{ env.version }}"
+          body_path: ./commit_logs.txt
+          draft: false
+          prerelease: false
+          token: ${{ secrets.RELEASE }}
+          files: |
+            ${{ github.workspace }}/*.deb
