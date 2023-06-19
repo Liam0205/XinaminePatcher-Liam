@@ -1,0 +1,183 @@
+#!/var/jb/usr/bin/sh
+
+###### IMPORTANT ###
+# IMPORTANT: Make sure to use Dopamine 1.1 or Xinam1ne if you are using Dopamine.
+
+### INFO ###
+# Author: NoW4U2Kid
+# Version: 1.7
+# Supported jailbreaks: Dopamine, Fugu15Max, Palera1n (rootless), Xina, or any other rootless jailbreak.
+# Description: Repacks tweaks as rootless, but this script is by far the best script for converting tweaks to rootless because it additionally modifies paths like with Xina jailbreak, so it works with almost every tweak.
+# Credits: @Xina520 (for the Xina jailbreak, which I looked at for inspiration for modifying paths), @Teutates on GitHub (for repack-rootless.sh, which I used to automate the default rootless conversion process), @sudo for ideas and a few modifications here and there, @évelyne for Allemand (removes the need for having Legacy arm64e Support/oldabi)
+
+### Changelog ###
+## v1.1 ##
+# Fixed a MAJOR bug in the file locating process. If you got an error when converting a tweak before, try it again with this new version, there's a good chance it might fix it
+# Added more exception paths
+## v1.2 ##
+# Made script much faster and more efficient. The Xinapatching portion should be about 2x faster now.
+# Slightly adjusted script based off of Derootifier's and @sudo's modifications.
+# Added @sudo to credits because he's cool and has helped a lot during this project, especially when I was starting. Never would have had the idea of using Xina symlinks without him.
+# Integrated Allemand (removes the need for having Legacy arm64e Support/oldabi) into the script. Now you shouldn't need oldabi to run tweaks patched with this script.
+## v1.3 ##
+# MAJOR! Integrated Allemand (removes the need for having Legacy arm64e Support/oldabi) into the script! Now you shouldn't (theoretically, if évelyne is to be trusted) need oldabi to run tweaks patched with this script.
+# Script is no longer broken (Hooray)! Last update broke script exceptions, so removed Derootifer modifications, since those were causing problems.
+# Made script even more efficient!
+## v1.4 ##
+# Removed Allemand because it was causing problems. Should not have trusted Evelyn with it in the first place...
+## v1.5 ##
+# Added some new symlinks that support Xinamine 0.0.5.
+# Added some more much need exception paths
+# @sudo basically laid the ground for this update, thanks!
+## v1.6 ##
+# Makes Xinamine a dependency for tweaks patched with this patcher
+# Removes (Xinafied-rootless) from the tweak name because it was making the name too long
+# Fixes tweaks that do not allow redebbing
+## v1.7 ##
+# The Xinamine Patcher tweak now, utilizing the power of Dopamine 1.1, now creates symlinks upon install that won't be deleted on rejailbreak. This means that you no longer *need* Xinamine to use Xina patched tweaks; just install this script package from my repo and you are good to go.
+## v1.7.2-1 (Liam) ##
+# 1. The `LDID="ldid -Hsha256"` that could potentially cause issues has been removed.
+# 2. The modification to the `Depends` field has been updated as it is not compatible in the bridged version of Dopamine.
+
+set -e
+
+if ! type dpkg-deb >/dev/null 2>&1; then
+	echo "Please install 'dpkg-deb'."
+fi
+
+if ! type file >/dev/null 2>&1; then
+	echo "Please install 'file' from Bingner or Procursus."
+fi
+
+if ! type otool >/dev/null 2>&1; then
+	echo "Please install 'odcctools'."
+fi
+
+if ! ldid 2>&1 | grep -q 'sha1\|sha2'; then
+	echo "Please install 'ldid' (must have -H option)."
+fi
+
+# LDID="ldid -Hsha256"
+
+OLD="$(mktemp -qd)"
+NEW="$(mktemp -qd)"
+
+if [ ! -d "$OLD" ] || [ ! -d "$NEW" ]; then
+	echo "Creating temporary directories failed."
+    exit 1;
+fi
+
+### Script start
+
+dpkg-deb -R "$1" "$OLD"
+
+if [ -d "$OLD/var/jb" ]; then
+    echo "Deb already rootless. Skipping and exiting cleanly."
+    rm -rf "$OLD" "$NEW"
+    exit 0;
+fi
+
+mkdir -p "$NEW"/var/jb
+cp -a "$OLD"/DEBIAN "$NEW"
+
+sed 's|iphoneos-arm|iphoneos-arm64|' < "$OLD"/DEBIAN/control > "$NEW"/DEBIAN/control
+sed -i '/^Depends: / s|, xinaa15||' "$NEW"/DEBIAN/control
+sed -i '/^Depends: / s/$/, oldabi (>= 0.3.2)/' "$NEW"/DEBIAN/control
+chmod -R 755 "$NEW"/DEBIAN >/dev/null 2>&1
+chmod 644 "$NEW"/DEBIAN/control >/dev/null 2>&1
+
+rm -rf "$OLD"/DEBIAN
+mv -f "$OLD"/.* "$OLD"/* "$NEW"/var/jb >/dev/null 2>&1 || true
+
+#### Overall Patching Start
+
+find "$NEW" -type f | while read -r file; do
+  if file -ib "$file" | grep -q "x-mach-binary; charset=binary"; then
+#    echo "$file"
+    INSTALL_NAME=$(otool -D "$file" | grep -v -e ":$" -e "^Archive :" | head -n1)
+    otool -L "$file" | tail -n +2 | grep -e /System | grep /Library/'[^/]'\*.dylib | cut -d' ' -f1 | tr -d "[:blank:]" > "$OLD"/._lib_cache
+    if [ -n "$INSTALL_NAME" ]; then
+        install_name_tool -id @rpath/"$(basename "$INSTALL_NAME")" "$file" >/dev/null 2>&1
+    fi
+    if otool -L "$file" | grep -q CydiaSubstrate; then
+        install_name_tool -change /Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate @rpath/libsubstrate.dylib "$file" >/dev/null 2>&1
+    fi
+    if [ -f "$OLD"/._lib_cache ]; then
+        cat "$OLD"/._lib_cache | while read line; do
+            install_name_tool -change "$line" @rpath/"$(basename "$line")" "$file" >/dev/null 2>&1
+        done
+    fi
+    install_name_tool -add_rpath "/var/jb/Library/Frameworks" "$file" >/dev/null 2>&1
+    install_name_tool -add_rpath "/var/jb/usr/lib" "$file" >/dev/null 2>&1
+
+### Xina Patching Start
+    #XinaPatch Binaries
+    sed -i 's#\x00/Library/MobileSub#\x00/var/LIY/MobileSub#g' "$file"
+    sed -i 's#\x00/Library/Sn#\x00/var/LIY/Sn#g' "$file"
+    sed -i 's#\x00/Library/Th#\x00/var/LIY/Th#g' "$file"
+    sed -i 's#\x00/Library/Application#\x00/var/LIY/Application#g' "$file"
+    sed -i 's#\x00/Library/LaunchD#\x00/var/LIY/LaunchD#g' "$file"
+    sed -i 's#\x00/Library/PreferenceB#\x00/var/LIY/PreferenceB#g' "$file"
+    sed -i 's#\x00/Library/PreferenceL#\x00/var/LIY/PreferenceL#g' "$file"
+    sed -i 's#\x00/Library/Frameworks#\x00/var/LIY/Frameworks#g' "$file"
+    sed -i 's#\x00/bin/sh#\x00/var/sh#g' "$file"
+    sed -i 's#\x00/usr/lib#\x00/var/lib#g' "$file"
+    sed -i 's#\x00/usr/bin#\x00/var/bin#g' "$file"
+    sed -i 's#\x00/var/mobile/Library/Preferences#\x00/var/jb/vmo/Library/Preferences#g' "$file"
+    sed -i 's#\x00/var/mobile/Library/Application#\x00/var/jb/vmo/Library/Application#g' "$file"
+    sed -i 's#view/Library/Application#view/var/LIY/Application#g' "$file"
+    sed -i 's#\x00/Applications#\x00/var/jb/Xapps#g' "$file"
+    sed -i 's#\x00/User/Library#\x00/var/jb/UsrLb#g' "$file"
+    #Revert Exceptions
+    sed -i 's#\x00/var/lib/libobjc.A.dylib#\x00/usr/lib/libobjc.A.dylib#g' "$file"
+    sed -i 's#\x00/var/lib/libc++.1.dylib#\x00/usr/lib/libc++.1.dylib#g' "$file"
+    sed -i 's#\x00/var/lib/libSystem.B.dylib#\x00/usr/lib/libSystem.B.dylib#g' "$file"
+    sed -i 's#\x00/var/lib/libstdc++.6.dylib#\x00/usr/lib/libstdc++.6.dylib#g' "$file"
+    sed -i 's#\x00/var/lib/libMobileGestalt.dylib#\x00/usr/lib/libMobileGestalt.dylib#g' "$file"
+    sed -i 's#\x00/var/lib/system/#\x00/usr/lib/system/#g' "$file"
+    sed -i 's#\x00/var/lib/dyld#\x00/usr/lib/dyld#g' "$file"
+    ldid -S "$file"
+  #Patch .plist files
+  elif basename "$file" | grep -q ".plist"; then
+    sed -i 's#>/Applications/#>/var/jb/Applications/#g' "$file"
+    sed -i 's#>/Library/i#>/var/LIY/i#g' "$file"
+    sed -i 's#>/usr/share/#>/var/share/#g' "$file"
+    sed -i 's#>/usr/bin/#>/var/bin/#g' "$file"
+    sed -i 's#>/usr/lib/#>/var/lib/#g' "$file"
+    sed -i 's#>/usr/sbin/#>/var/sbin/#g' "$file"
+    sed -i 's#>/usr/libexec/#>/var/libexec/#g' "$file"
+    sed -i 's#>/usr/#>/var/jb/usr/#g' "$file"
+    sed -i 's#>/etc/#>/var/etc/#g' "$file"
+    sed -i 's#>/bin/#>/var/bin/#g' "$file"
+    sed -i 's#>/Library/#>/var/LIY/#g' "$file"
+  fi
+done
+
+#Patch /DEBIAN preinst, postinst, prerm, postrm
+find "$NEW"/DEBIAN -type f | while read -r file; do
+  if basename "$file" | grep -q "preinst\|postinst\|prerm\|postrm"; then
+    sed -i 's# /Applications/# /var/jb/Applications/#g' "$file"
+    sed -i 's# /Library/i# /var/LIY/i#g' "$file"
+    sed -i 's# /usr/share/# /var/share/#g' "$file"
+    sed -i 's# /usr/bin/# /var/bin/#g' "$file"
+    sed -i 's# /usr/lib/# /var/lib/#g' "$file"
+    sed -i 's# /usr/sbin/# /var/sbin/#g' "$file"
+    sed -i 's# /usr/libexec/# /var/libexec/#g' "$file"
+    sed -i 's# /usr/# /var/jb/usr/#g' "$file"
+    sed -i 's# /etc/# /var/etc/#g' "$file"
+    sed -i 's# /bin/# /var/bin/#g' "$file"
+    sed -i 's# /Library/# /var/LIY/#g' "$file"
+  fi
+done
+### Xina Patching End
+
+#### Overall Patching End
+
+dpkg-deb -b "$NEW" "$(pwd)"/"$(grep Package: "$NEW"/DEBIAN/control | cut -f2 -d ' ')"_"$(grep Version: "$NEW"/DEBIAN/control | cut -f2 -d ' ')"_"$(grep Architecture: "$NEW"/DEBIAN/control | cut -f2 -d ' ')".deb >/dev/null 2>&1
+
+### Script end
+
+### Cleaning up
+rm -rf "$OLD" "$NEW"
+
+/var/jb/basebin/jbctl rebuild_trustcache >/dev/null 2>&1
