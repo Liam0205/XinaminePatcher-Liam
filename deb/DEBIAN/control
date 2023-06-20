@@ -1,7 +1,7 @@
 Package: page.liam.xinaminepatcherscript
 Replaces: ez.now.xinaminepatcherscript
 Conflicts: ez.now.xinaminepatcherscript
-Version: 1.7.2-2
+Version: 1.7.4-1
 Section: System
 Depends: ellekit, file, odcctools, ldid
 Maintainer: Liam Huang

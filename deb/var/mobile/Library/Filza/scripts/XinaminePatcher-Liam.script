@@ -38,6 +38,8 @@
 ## v1.7.2-1 (Liam) ##
 # 1. The `LDID="ldid -Hsha256"` that could potentially cause issues has been removed.
 # 2. The modification to the `Depends` field has been updated as it is not compatible in the bridged version of Dopamine.
+## v1.7.4-1 (Liam) ##
+# 1. add deps of xinamine back
 
 set -e
 
@@ -82,7 +84,7 @@ cp -a "$OLD"/DEBIAN "$NEW"
 
 sed 's|iphoneos-arm|iphoneos-arm64|' < "$OLD"/DEBIAN/control > "$NEW"/DEBIAN/control
 sed -i '/^Depends: / s|, xinaa15||' "$NEW"/DEBIAN/control
-sed -i '/^Depends: / s/$/, oldabi (>= 0.3.2)/' "$NEW"/DEBIAN/control
+sed -i '/^Depends: / s/$/, oldabi (>= 0.3.2), emt.paisseon.xinamine (>= 0.0.5)/' "$NEW"/DEBIAN/control
 chmod -R 755 "$NEW"/DEBIAN >/dev/null 2>&1
 chmod 644 "$NEW"/DEBIAN/control >/dev/null 2>&1
 
